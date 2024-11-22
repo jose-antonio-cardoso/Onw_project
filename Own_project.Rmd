@@ -1,0 +1,288 @@
+---
+title: "Own_project"
+author: "José Antonio Cardoso"
+date: "2024-11-20"
+output:
+  word_document: default
+---
+
+# Introduction
+
+**To complete the Professional Data Science training, the student was asked to develop a project of his own (authored). Some rules were established, for example, that the purpose of the project object (algorithm) was freely chosen, as well as the data set to be used in this development. Therefore, this report presents the aforementioned algorithm, as well as describing its objective and functionality.**
+
+# Overview
+
+**The project object (algorithm) uses classification techniques and for this, it uses Random Forest, a machine learning algorithm that uses decision trees to make predictions. It also uses a GUIDE data set made available by Microsoft, on the Kaggle platform, which is a global community of data scientists. (/kaggle/input/microsoft-security-incident-prediction/).**
+
+# Executive Summary
+
+**The project objective (algorithm) is to classify cybersecurity incidents by analyzing the responses to calls made by the SOC (Security Operations Center) team, as described in the aforementioned data set.**
+
+# Methods
+
+**Several R language packages are required to enable the development of the algorithm. The dataset is originally available on the Kaggle platform, but a copy of it was downloaded and made available together with the files for this project.**
+
+```{r installation, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+##############
+# INSTALLATION
+##############
+
+# Load the required libraries
+# (Important: This process may take a while and may take a few minutes
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+if(!require(purrr)) install.packages("purrr", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+if(!require(Metrics)) install.packages("Metrics", repos = "http://cran.us.r-project.org")
+
+library(caret)
+library(tidyverse)
+library(dplyr)
+library(purrr)
+library(randomForest)
+library(Metrics)
+
+# Clears previous executions and clears the console
+rm(list = ls())
+cat("\f")
+```
+
+```{r preparation}
+
+#################################################
+# START PREPARING THE TRAINING AND TEST DATA SETS
+#################################################
+
+# Read the training data set
+GUIDE_train <- read.csv("GUIDE_Train.csv", header = TRUE)
+# Read the test data set
+GUIDE_test <- read.csv("GUIDE_Test.csv", header = TRUE)
+
+# Convert the Id field to character from the training dataset
+GUIDE_train$Id <-as.character(GUIDE_train$Id)
+# Convert the Id field to character from the test data set
+GUIDE_test$Id <-as.character(GUIDE_test$Id)
+
+# As you can see in this code, the data set is already divided.
+# However, to demonstrate the knowledge about the logic and necessity of this division
+# I present here the code related to this process, where for educational purposes I consider the
+# complete GUDE file, which I fictitiously called complet_GUIDE.csv
+# Just for information...
+# Note: The division between Training and Testing is 70% and 30% respectively
+# Dividing the data into training and validation
+# Defining the seed for generating random numbers
+#set.seed(0)
+#train_index <- createDataPartition(complet_GUIDE$IncidentGrade, p = 0.7, list = FALSE)
+#GUIDE_train <- complet_GUIDE[train_index,]
+#GUIDE_test <- complet_GUIDE[-train_index,]
+
+```
+
+# Analysis
+
+**Originally the GUIDE dataset (Training and Testing) contains over 13 million pieces of evidence across 33 entity types, covering 1.6 million alerts and 1 million annotated incidents, distributed across 45 columns with information such as: DeviceId (Unique identifier for the device), IpAddress (Involved IP address), Url (Involved URL) AccountUpn (Email account identifier) ​​etc. However, in order to meet the objective of classifying cybersecurity incidents by analyzing the responses to the calls made by the SOC (Security Operations Center) team, as described in the "Executive Summary", we decided to use the identification columns ("Id" and "IncidentId") as a matter of good practice, and we used the columns ActionGrouped (SOC alert remediation action (high level)), ActionGranular (SOC alert remediation action (fine grain)) and LastVerdict (Final verdict of the threat analysis) as predictor variables and IncidentGrade (SOC grade assigned to the incident) is the response variable.**
+
+```{r preparation_dataset_training}
+
+####################################
+# PREPARING DATASETS (TRAINING ONLY)
+####################################
+
+# Make a copy of the training dataset
+df_data_train <- GUIDE_train
+
+# Select only the columns that are important for the evaluation
+cols_df <- c("Id","IncidentId","ActionGrouped","ActionGranular","LastVerdict","IncidentGrade")
+
+# Apply the selection on the Training dataset
+df_data_train <- df_data_train[, cols_df]
+
+# Filters only the rows that contain SOC responses, thus eliminating any column that contains "Not Available" values
+df_data_train <- df_data_train %>%
+   filter(ActionGrouped != "" & ActionGranular != "" & LastVerdict != "" & IncidentGrade != "") 
+
+```
+
+```{r quantitative}
+
+# Presents some quantitative information about the dataset.
+cat("Number of records in the Training dataset","\n")
+
+cat("Show the first few rows of the dataset","\n")
+head(df_data_train,5)
+
+cat("\n","Show unique values from columns")
+
+# Apply the function to each column and store the results in a list
+newcols_df <- c("ActionGrouped","ActionGranular","LastVerdict","IncidentGrade")
+list_result <- map(newcols_df, ~df_data_train %>% 
+                  pull(.x) %>% 
+                  unique())
+names(list_result) <- newcols_df
+list_result
+# In this line above, the code prints the list containing the unique values of
+# each column, as explained above,
+
+cat("\n","Shows the structure of the dataset","\n")
+str(df_data_train)
+
+cat("\n","Summarizes the dataset")
+summary(df_data_train)
+
+```
+
+```{r transformation_string_factor}
+
+# Transform the string column into a factor
+df_data_train$IncidentGrade <- as.factor(df_data_train$IncidentGrade)
+df_data_train$ActionGrouped <- as.factor(df_data_train$ActionGrouped)
+df_data_train$ActionGranular <- as.factor(df_data_train$ActionGranular)
+df_data_train$LastVerdict <- as.factor(df_data_train$LastVerdict)
+
+```
+
+# Execution
+
+**The model is executed using the machine learning algorithm that uses decision trees to make predictions, in this case Random Forest. It is extracted from the train function, which trains the model using Random Forest in an unencapsulated way. The trained_model object generated by the train function has the various methods that we use to demonstrate the execution of the model, including graphs of class distribution and importance of variables. The test is performed using the trained_model object, generating the appropriate predictions.**
+
+```{r perform_training}
+
+##############################################
+# PERFORM TRAINING AND EVALUATION OF THE MODEL
+##############################################
+
+# Set the seed for random number generation
+set.seed(0)
+
+# Set the control parameters
+ctrl <- trainControl(method = "cv", number = 10)
+
+# Define the hyperparameter grid
+hyper_grid <- expand.grid(mtry = c(3, 4, 5))
+
+# Train the model
+trained_model <- train(IncidentGrade ~ ActionGrouped + ActionGranular + LastVerdict, 
+                       data = df_data_train, 
+                       method = "rf",
+                       tuneGrid = hyper_grid,
+                       trControl = ctrl)
+
+# Print the trained model
+print(trained_model)
+
+# Presents an overview of the different hyperparameter combinations tested and their respective performance metrics.
+trained_model$results
+
+# Show cross-validation results.
+trained_model$resample
+
+# Shows the final selected model after hyperparameter sweeping and cross-validation.
+trained_model$finalModel
+
+# Shows the relative importance of each predictor variable in the final model
+trained_model$finalModel$importance
+
+# This graph shows the distribution of classes in the data set, helping to understand if there is an imbalance.
+# Plots the distribution of classes
+ggplot(df_data_train, aes(x = IncidentGrade)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Classes in the Training Set", x = "Class", y = "Count")
+
+# This graph shows the relative importance of each predictor variable.
+# Plots the importance of variables
+importance <- varImp(trained_model, scale = FALSE)
+ggplot(importance, aes(x = reorder(Overall, Overall), y = Overall)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Importance of Variables", x = "Variable", y = "Importance")
+
+```
+
+```{r train_predictions}
+
+# Make predictions on the TRAINING dataset to evaluate the model's performance
+train_predictions <- predict(trained_model, newdata = df_data_train)
+
+# Converts categorical data into factors for classification
+actual_class <- df_data_train$IncidentGrade
+predicted_class <- train_predictions
+
+# Calculates accuracy, as an assessment of model performance
+accuracy_train <- accuracy(actual_class, predicted_class)
+cat("Accuracy:", accuracy_train, "\n")
+
+# Calculate the F1-score, as an evaluation of the model's performance
+f1_train <- f1(actual_class, predicted_class)
+cat("F1-score:", f1_train, "\n")
+
+```
+
+```{r evaluate}
+
+#####################################
+# TEST AND EVALUATE THE TRAINED MODEL
+#####################################
+
+# Make a copy of the test dataset
+df_data_test <- GUIDE_test
+
+# Apply the selection to the Test dataset
+df_data_test <- df_data_test[, cols_df]
+
+# Filters only the rows that contain SOC responses, thus eliminating any column that contains "Not Available" values
+df_data_test <- df_data_test %>%
+   filter(ActionGrouped != "" & ActionGranular != "" & LastVerdict != "" & IncidentGrade != "") 
+
+# Transform the string column into a factor
+df_data_test$IncidentGrade <- as.factor(df_data_test$IncidentGrade)
+df_data_test$ActionGrouped <- as.factor(df_data_test$ActionGrouped)
+df_data_test$ActionGranular <- as.factor(df_data_test$ActionGranular)
+df_data_test$LastVerdict <- as.factor(df_data_test$LastVerdict)
+
+# Make predictions on the TEST dataset to evaluate the model's performance
+test_predictions <- predict(trained_model, newdata = df_data_test)
+
+# Converts categorical data into factors for classification
+actual_class <- df_data_test$IncidentGrade
+predicted_class <- test_predictions
+
+# Calculates accuracy, as an assessment of model performance
+accuracy_test <- accuracy(actual_class, predicted_class)
+cat("Accuracy:", accuracy_test, "\n")
+
+# Calculate the F1-score, as an evaluation of the model's performance
+f1_test <- f1(actual_class, predicted_class)
+cat("F1-score:", f1_test, "\n")
+
+```
+
+# Results
+
+**Although the data set is considerably large, which is very good for achieving greater reliability in the model's execution, I tried to eliminate as many rows and columns of incomplete data as possible, thus generating a smaller amount of data, but with all rows and columns containing reliable information. I tried to use accuracy to evaluate the model's performance, as well as the F1 Score to help balance the importance of false positives and false negatives.**
+
+```{r results}
+
+####################################
+# MODEL OUTPUT AND ITS PERFORMANCE #
+####################################
+
+# IMPRIME A Calculates accuracy, as an assessment of model performance
+cat("Accuracy:", accuracy_train, "\n")
+
+# Calculate the F1-score, as an evaluation of the model's performance
+cat("F1-score:", f1_train, "\n")
+
+# Calculates accuracy, as an assessment of model performance
+cat("Accuracy:", accuracy_test, "\n")
+
+# Calculate the F1-score, as an evaluation of the model's performance
+cat("F1-score:", f1_test, "\n")
+
+```
+
+# Conclusion
+
+**Reaching an accuracy of 0.7058824 and an F1-Score of 0.8 can be considered a good result in some aspects, but I understand that there is a lot of room for improvement. The exclusion of incomplete data rows and columns, as mentioned above, contributed to obtaining these performance numbers, although we were left with a more limited amount of data. However, in order to continue the work, I intend to reevaluate the data set, looking for more subsidies for the model to make its classifications.**
