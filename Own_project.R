@@ -1,6 +1,7 @@
 # ---
 # title: "Own_project"
 # author: "José Antonio Cardoso"
+# date: "2024-11-23"
 #
 # Note
 # This algorithm was developed using R version 4.4.1, and aims to classify security incidents 
@@ -34,6 +35,42 @@ cat("\f")
 #################################################
 # START PREPARING THE TRAINING AND TEST DATA SETS
 #################################################
+
+# Defines the dataset that will be validated (Training)
+guide_file <- 'GUIDE_Train.csv'
+
+# Check if the dataset exists.
+if (!file.exists(guide_file)) {
+  # If it exists, download the repository from GitHub, validating success or error when downloading
+  url <- 'https://raw.githubusercontent.com/jose-antonio-cardoso/Own_project/main/GUIDE_Train.csv'
+  tryCatch({
+    download.file(url, guide_file, mode = "wb")
+    cat("Dataset downloaded successfully!\n")
+  }, error = function(e) {
+    cat("Error downloading dataset:", conditionMessage(e), "\n")
+  })
+  # If the dataset already exists, just issue a warning.  
+} else {
+  cat("Dataset already exists in directory.\n")
+}
+
+# Define o conjunto de dados que será validado (Test)
+guide_file <- 'GUIDE_Test.csv'
+
+# Check if the dataset exists.
+if (!file.exists(guide_file)) {
+  # If it exists, download the repository from GitHub, validating success or error when downloading
+  url <- 'https://raw.githubusercontent.com/jose-antonio-cardoso/Own_project/main/GUIDE_Test.csv'
+  tryCatch({
+    download.file(url, guide_file, mode = "wb")
+    cat("Dataset downloaded successfully!\n")
+  }, error = function(e) {
+    cat("Error downloading dataset:", conditionMessage(e), "\n")
+  })
+  # If the dataset already exists, just issue a warning.  
+} else {
+  cat("Dataset already exists in directory.\n")
+}
 
 # Read the training data set
 GUIDE_train <- read.csv("GUIDE_Train.csv", header = TRUE)
